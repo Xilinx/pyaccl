@@ -227,6 +227,8 @@ class CCLOp(IntEnum):
     allgather      = 9
     allreduce      = 10
     reduce_scatter = 11
+    barrier        = 12
+    all_to_all     = 13
     nop            = 255
 
 @unique
@@ -663,7 +665,7 @@ class accl():
             buf_phys_addr = addrh*(2**32)+addrl
             print(f"SPARE RX BUFFER{i}:\t ADDR: {hex(buf_phys_addr)} \t STATUS: {status} \t OCCUPANCY: {rxlen}/{maxsize} \t  MPI TAG:{hex(rxtag)} \t SEQ: {seq} \t SRC:{rxsrc} \t DATA: {content}")
 
-    def prepare_call(self, addr_0, addr_1, addr_2, compress_dtype=None):
+    def prepare_call(self, scenario, addr_0, addr_1, addr_2, compress_dtype=None):
         # no addresses, this is a config call
         # set dummy addresses where needed
         if addr_0 is None:
@@ -688,8 +690,11 @@ class accl():
             # no ethernet compression
             if len(dtypes) == 1:
                 # no operand compression
-                single_dtype = dtypes.pop()
-                arithcfg = self.arith_config[(single_dtype.name, single_dtype.name)]
+                if scenario == CCLOp.barrier:
+                    arithcfg = self.arith_config[list(self.arith_config.keys())[0]]
+                else:
+                    single_dtype = dtypes.pop()
+                    arithcfg = self.arith_config[(single_dtype.name, single_dtype.name)]
             else:
                 # with operand compression
                 # determine compression dtype
@@ -731,12 +736,12 @@ class accl():
 
     def call_async(self, scenario=CCLOp.nop, count=1, comm=GLOBAL_COMM, root_src_dst=0, function=0, tag=TAG_ANY, compress_dtype=None, stream_flags=ACCLStreamFlags.NO_STREAM, addr_0=None, addr_1=None, addr_2=None):
         assert self.config_rdy, "CCLO not configured, cannot call"
-        arithcfg, compression_flags, addr_0, addr_1, addr_2 = self.prepare_call(addr_0, addr_1, addr_2, compress_dtype)
+        arithcfg, compression_flags, addr_0, addr_1, addr_2 = self.prepare_call(scenario, addr_0, addr_1, addr_2, compress_dtype)
         return self.cclo.start(scenario, count, comm, root_src_dst, function, tag, arithcfg, compression_flags, stream_flags, addr_0, addr_1, addr_2)
 
     def call_sync(self, scenario=CCLOp.nop, count=1, comm=GLOBAL_COMM, root_src_dst=0, function=0, tag=TAG_ANY, compress_dtype=None, stream_flags=ACCLStreamFlags.NO_STREAM, addr_0=None, addr_1=None, addr_2=None):
         assert self.config_rdy, "CCLO not configured, cannot call"
-        arithcfg, compression_flags, addr_0, addr_1, addr_2 = self.prepare_call(addr_0, addr_1, addr_2, compress_dtype)
+        arithcfg, compression_flags, addr_0, addr_1, addr_2 = self.prepare_call(scenario, addr_0, addr_1, addr_2, compress_dtype)
         self.cclo.call(scenario, count, comm, root_src_dst, function, tag, arithcfg, compression_flags, stream_flags, addr_0, addr_1, addr_2)
 
     def get_retcode(self):
@@ -1034,3 +1039,9 @@ class accl():
         prevcall[0].wait()
         if not to_fpga:
             rbuf[0:count].sync_from_device()
+
+    @self_check_return_value
+    def barrier(self, comm_id=GLOBAL_COMM):
+        prevcall = [self.call_async(scenario=CCLOp.barrier, comm=self.communicators[comm_id].addr, addr_0=self.utility_spare)]
+        prevcall[0].wait()
+

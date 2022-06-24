@@ -18,7 +18,7 @@
 import sys
 import numpy as np
 import time
-from pyaccl.accl import accl, ACCLReduceFunctions, ACCLStreamFlags, SimBuffer
+from pyaccl import accl, ACCLReduceFunctions, ACCLStreamFlags, SimBuffer
 import argparse
 import itertools
 import math
@@ -148,6 +148,10 @@ def test_sendrecv_fanin(cclo_inst, world_size, local_rank, count, dt = [np.float
                     print("Fan-in send/recv succeeded for sender rank ", i, "on pair", op_dt, res_dt)
     if err_count == 0:
         print("Fan-in send/recv succeeded")
+
+def test_barrier(cclo_inst):
+    cclo_inst.barrier()
+    print("Barrier succeeded")
 
 def test_bcast(cclo_inst, local_rank, root, count, dt = [np.float32]):
     err_count = 0
@@ -417,6 +421,7 @@ if __name__ == "__main__":
     parser.add_argument('--sndrcv',     action='store_true', default=False, help='Run send/receive test')
     parser.add_argument('--sndrcv_strm', action='store_true', default=False, help='Run send/receive stream test')
     parser.add_argument('--sndrcv_fanin', action='store_true', default=False, help='Run send/receive fan-in test')
+    parser.add_argument('--barrier',    action='store_true', default=False, help='Run barrier test')
     parser.add_argument('--bcast',      action='store_true', default=False, help='Run bcast test')
     parser.add_argument('--scatter',    action='store_true', default=False, help='Run scatter test')
     parser.add_argument('--gather',     action='store_true', default=False, help='Run gather test')
@@ -442,6 +447,7 @@ if __name__ == "__main__":
         args.sndrcv  = True
         args.sndrcv_strm = True
         args.sndrcv_fanin = args.tcp
+        args.barrier = True
         args.bcast   = True
         args.scatter = True
         args.gather = True
@@ -511,6 +517,9 @@ if __name__ == "__main__":
                         test_sendrecv_fanin(cclo_inst, world_size, local_rank, args.count, dt=dt)
                     else:
                         print("Skipping fanin test, feature not available for UDP")
+                    comm.barrier()
+                if args.barrier:
+                    test_barrier(cclo_inst)
                     comm.barrier()
                 if args.bcast:
                     test_bcast(cclo_inst, local_rank, i, args.count, dt=dt)

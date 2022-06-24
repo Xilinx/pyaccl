@@ -18,7 +18,7 @@
 import sys
 import numpy as np
 import time
-from pyaccl.accl import accl, ACCLReduceFunctions, ACCLStreamFlags
+from pyaccl import accl, ACCLReduceFunctions, ACCLStreamFlags
 import pynq
 import argparse
 import itertools

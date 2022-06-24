@@ -18,4 +18,4 @@ from .accl import accl, ACCLReduceFunctions, ACCLStreamFlags, SimBuffer
 
 __author__ = "Lucian Petrica"
 __copyright__ = "Copyright 2021, Xilinx"
-__version__ = '0.1.0'
+__version__ = '0.2.0'
