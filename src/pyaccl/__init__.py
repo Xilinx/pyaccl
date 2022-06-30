@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 # *******************************************************************************/
-from .accl import accl, ACCLReduceFunctions, ACCLStreamFlags
+from .accl import accl, ACCLStreamFlags
 from .buffer import ACCLBuffer
+from .constants import ACCLReduceFunctions
 
 __author__ = "Lucian Petrica"
 __copyright__ = "Copyright 2021, Xilinx"

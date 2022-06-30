@@ -19,55 +19,9 @@ from argparse import ArgumentError
 import numpy as np
 import warnings
 import ipaddress
-from enum import IntEnum, unique
 from pyaccl.buffer import ACCLBuffer
 from pyaccl.device import SimDevice, AlveoDevice
-
-@unique
-class CCLOp(IntEnum):
-    config         = 0
-    copy           = 1
-    combine        = 2
-    send           = 3
-    recv           = 4
-    bcast          = 5
-    scatter        = 6
-    gather         = 7
-    reduce         = 8
-    allgather      = 9
-    allreduce      = 10
-    reduce_scatter = 11
-    barrier        = 12
-    all_to_all     = 13
-    nop            = 255
-
-@unique
-class CCLOCfgFunc(IntEnum):
-    reset_periph         = 0
-    enable_pkt           = 1
-    set_timeout          = 2
-    open_port            = 3
-    open_con             = 4
-    set_stack_type       = 5
-    set_max_segment_size = 6
-
-@unique
-class ACCLReduceFunctions(IntEnum):
-    SUM = 0
-
-@unique
-class ACCLCompressionFlags(IntEnum):
-    NO_COMPRESSION = 0
-    OP0_COMPRESSED = 1
-    OP1_COMPRESSED = 2
-    RES_COMPRESSED = 4
-    ETH_COMPRESSED = 8
-
-@unique
-class ACCLStreamFlags(IntEnum):
-    NO_STREAM = 0
-    OP0_STREAM = 1
-    RES_STREAM = 2
+from pyaccl.constants import CCLOCfgFunc, ACCLCompressionFlags, ErrorCode, ACCLStreamFlags, CCLOp
 
 class ACCLCommunicator():
     def __init__(self, ranks, local_rank, index):
@@ -199,6 +153,14 @@ class ACCLArithConfig():
             addr += 4
         return addr
 
+TAG_ANY = 0xFFFF_FFFF
+EXCHANGE_MEM_OFFSET_ADDRESS= 0x0
+EXCHANGE_MEM_ADDRESS_RANGE = 0x2000
+RETCODE_OFFSET = 0x1FFC
+IDCODE_OFFSET = 0x1FF8
+CFGRDY_OFFSET = 0x1FF4
+GLOBAL_COMM = 0x0
+
 ACCL_DEFAULT_ARITH_CONFIG = {
     ('float16', 'float16'): ACCLArithConfig(2, 2, 0, 0, 0, 0, [4]),
     ('float32', 'float16'): ACCLArithConfig(4, 2, 0, 0, 1, 1, [4]),
@@ -207,44 +169,6 @@ ACCL_DEFAULT_ARITH_CONFIG = {
     ('int32'  , 'int32'  ): ACCLArithConfig(4, 4, 0, 0, 0, 0, [2]),
     ('int64'  , 'int64'  ): ACCLArithConfig(8, 8, 0, 0, 0, 0, [3]),
 }
-
-@unique
-class ErrorCode(IntEnum):
-    DMA_MISMATCH_ERROR                          = (1<< 0)
-    DMA_INTERNAL_ERROR                          = (1<< 1)
-    DMA_DECODE_ERROR                            = (1<< 2)
-    DMA_SLAVE_ERROR                             = (1<< 3)
-    DMA_NOT_OKAY_ERROR                          = (1<< 4)
-    DMA_NOT_END_OF_PACKET_ERROR                 = (1<< 5)
-    DMA_NOT_EXPECTED_BTT_ERROR                  = (1<< 6)
-    DMA_TIMEOUT_ERROR                           = (1<< 7)
-    CONFIG_SWITCH_ERROR                         = (1<< 8)
-    DEQUEUE_BUFFER_TIMEOUT_ERROR                = (1<< 9)
-    DEQUEUE_BUFFER_SPARE_BUFFER_STATUS_ERROR    = (1<<10)
-    RECEIVE_TIMEOUT_ERROR                       = (1<<11)
-    DEQUEUE_BUFFER_SPARE_BUFFER_DMATAG_MISMATCH = (1<<12)
-    DEQUEUE_BUFFER_SPARE_BUFFER_INDEX_ERROR     = (1<<13)
-    COLLECTIVE_NOT_IMPLEMENTED                  = (1<<14)
-    RECEIVE_OFFCHIP_SPARE_BUFF_ID_NOT_VALID     = (1<<15)
-    OPEN_PORT_NOT_SUCCEEDED                     = (1<<16)
-    OPEN_CON_NOT_SUCCEEDED                      = (1<<17)
-    DMA_SIZE_ERROR                              = (1<<18)
-    ARITH_ERROR                                 = (1<<19)
-    PACK_TIMEOUT_STS_ERROR                      = (1<<20)
-    PACK_SEQ_NUMBER_ERROR                       = (1<<21)
-    COMPRESSION_ERROR                           = (1<<22)
-    KRNL_TIMEOUT_STS_ERROR                      = (1<<23)
-    KRNL_STS_COUNT_ERROR                        = (1<<24)
-    SEGMENTER_EXPECTED_BTT_ERROR                = (1<<25)
-    DMA_TAG_MISMATCH_ERROR                      = (1<<26)
-
-TAG_ANY = 0xFFFF_FFFF
-EXCHANGE_MEM_OFFSET_ADDRESS= 0x0
-EXCHANGE_MEM_ADDRESS_RANGE = 0x2000
-RETCODE_OFFSET = 0x1FFC
-IDCODE_OFFSET = 0x1FF8
-CFGRDY_OFFSET = 0x1FF4
-GLOBAL_COMM = 0x0
 
 class accl():
     """
