@@ -1,0 +1,10 @@
+{
+    "xilinx_u280_xdma_201920_3": {
+        "url": "https://github.com/Xilinx/ACCL/releases/download/axis3x/accl_axis3x.xilinx_u280_xdma_201920_3.xclbin",
+        "md5sum": "14273db98b8fadec1d7afb72baacc3da"
+    },
+    "xilinx_u55c_gen3x16_xdma_base_3": {
+        "url": "https://github.com/Xilinx/ACCL/releases/download/axis3x/accl_axis3x.xilinx_u55c_gen3x16_xdma_base_3.xclbin",
+        "md5sum": "423e733aabc7946385a17b55f8895185"
+    }
+}
