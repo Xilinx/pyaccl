@@ -4,7 +4,7 @@ This package provides Python bindings for the [Alveo Collective Communication Li
 
 Built and uploaded with:
 ```sh
-python3 -m build
+python3 setup.py sdist
 python3 -m twine upload dist/*
 ```
 
