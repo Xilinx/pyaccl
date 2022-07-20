@@ -103,12 +103,12 @@ class AlveoDevice():
         self.cclo = self.ol.__getattr__(accl_dict[cclo_idx])
         self.hostctrl = [self.ol.__getattr__(c) for c in accl_dict[cclo_idx]["controllers"]]
         self.mmio = self.cclo.mmio
-
+        self.protocol = accl_dict[cclo_idx]["poe"]["protocol"]
         self.devicemem = self.ol.__getattr__(accl_dict[cclo_idx]["memory"][0])
         self.rxbufmem = [self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["memory"]]
         if accl_dict[cclo_idx]["poe"] is None:
             self.networkmem = None
-        elif accl_dict[cclo_idx]["poe"]["protocol"] == "TCP":
+        elif self.protocol == "TCP":
             self.networkmem = []
             self.networkmem.append([self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["poe"]["memory"][0]])
             self.networkmem.append([self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["poe"]["memory"][1]])
