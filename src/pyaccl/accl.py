@@ -174,8 +174,8 @@ class accl():
     """
     ACCL Python Driver
     """
-    def __init__(self, ranks, local_rank, protocol="TCP", nbufs=16, bufsize=1024, mem=None, overlay=None, cclo_ip=None, hostctrl_ip=None, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_sock=None):
-        assert overlay is not None or sim_sock is not None, "Either simulation socket or FPGA overlay must be provided"
+    def __init__(self, ranks, local_rank, protocol="TCP", nbufs=16, bufsize=1024, xclbin=None, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_sock=None):
+        assert xclbin is not None or sim_sock is not None, "Either simulation socket or FPGA bitstream must be provided"
         self.cclo = None
         #define an empty list of RX spare buffers
         self.rx_buffer_spares = []
@@ -210,8 +210,8 @@ class accl():
         if self.sim_mode:
             self.cclo = SimDevice(sim_sock)
         else:
-            assert (overlay is not None) and (cclo_ip is not None) and (hostctrl_ip is not None)
-            self.cclo = AlveoDevice(overlay, cclo_ip, hostctrl_ip, mem=mem)
+            assert (xclbin is not None)
+            self.cclo = AlveoDevice(xclbin, board_idx=0, cclo_idx=0)
 
         print("CCLO HWID: {} at {}".format(hex(self.get_hwid()), hex(self.cclo.mmio.base_addr)))
 
@@ -239,12 +239,15 @@ class accl():
         self.set_max_segment_size(bufsize)
 
         # set stack type
+        if not self.sim_mode:
+            assert self.cclo.protocol == self.protocol, "Requested protocol does not match POE"
+
         if self.protocol == "UDP":
             self.use_udp()
         elif self.protocol == "TCP":
             if not self.sim_mode:
-                self.tx_buf_network = ACCLBuffer((64*1024*1024,), dtype=np.int8, target=self.cclo.networkmem)
-                self.rx_buf_network = ACCLBuffer((64*1024*1024,), dtype=np.int8, target=self.cclo.networkmem)
+                self.tx_buf_network = ACCLBuffer((64*1024*1024,), dtype=np.int8, target=self.cclo.networkmem[0][0])
+                self.rx_buf_network = ACCLBuffer((64*1024*1024,), dtype=np.int8, target=self.cclo.networkmem[1][0])
                 self.tx_buf_network.sync_to_device()
                 self.rx_buf_network.sync_to_device()
             self.use_tcp()

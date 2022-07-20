@@ -108,10 +108,13 @@ def seek_networkstack(ip_dict, stream_id):
                     ret = {}
                     ret["name"] = ip["fullpath"]
                     ret["protocol"] = "TCP" if ip['type'] == TCP_VLNV else "UDP"
-                    ret["memory"] = [ip["registers"]["axi00_ptr0"]["memory"], ip["registers"]["axi00_ptr1"]["memory"]] if ip['type'] == TCP_VLNV else []
+                    if ip['type'] == TCP_VLNV:
+                        ptr0 = get_banks_attr(ip["registers"]["axi00_ptr0"]["memory"])
+                        ptr1 = get_banks_attr(ip["registers"]["axi00_ptr1"]["memory"])
+                        ret["memory"] = [ptr0, ptr1]
                     return ret
 
-def seek_cmac(ip_dict, stream_id):
+def seek_mac(ip_dict, stream_id):
     for key in ip_dict.keys():
         ip = ip_dict[key]
         if ip["type"] == UDP_CMAC0_VLNV or ip['type'] == UDP_CMAC1_VLNV or ip['type'] == TCP_CMAC_VLNV:
@@ -121,6 +124,29 @@ def seek_cmac(ip_dict, stream_id):
                     # we've found a CMAC stack
                     return ip["fullpath"]
 
+def get_banks_attr(banks):
+    # convert from "TI[x:y]" to ["TOx", "TOx+1",...,"TOy-1", "TOy"]
+    # TI->TO can be HBM->HBM, DDR->bank, PLRAM->plram
+    b = banks.replace(']',' ').replace('[',' ').replace(':',' ').split()
+    ti = b[0]
+    if ti == "HBM":
+        to = ti
+    elif ti == "DDR":
+        to = "bank"
+    elif ti == "PLRAM":
+        to = "plram"
+    else:
+        raise Exception("Unrecognized memory bank type")
+    start_idx = int(b[1])
+    if len(b) > 2:
+        end_idx = int(b[2])
+    else:
+        end_idx = start_idx+1
+    ret = []
+    for i in range(start_idx, end_idx):
+        ret.append(to+str(i))
+    return ret
+
 def scan_overlay(ol):
     d = ol.ip_dict
     # search IP dictionary for CCLOs by VLNV
@@ -129,15 +155,19 @@ def scan_overlay(ol):
         ip = d[key]
         if ip['type'] == CCLO_VLNV:
             # extract memory connections
-            assert ip["registers"]["m_axi_0"] == ip["registers"]["m_axi_1"], "CCLO AXIMM ports not connected to same memory"
-            cclo_dict[ip['fullpath']] = {}
-            curr_cclo = cclo_dict[ip['fullpath']]
-            curr_cclo["memory"] = ip["registers"]["m_axi_0"]
+            assert ip["registers"]["m_axi_0"]["memory"] == ip["registers"]["m_axi_1"]["memory"], "CCLO AXIMM ports not connected to same memory"
+            cclo_dict[ip["cu_index"]] = {}
+            curr_cclo = cclo_dict[ip["cu_index"]]
+            curr_cclo["name"] = ip['fullpath']
+            curr_cclo["memory"] = get_banks_attr(ip["registers"]["m_axi_0"]["memory"])
             # look for associated controllers
-            curr_cclo["controllers"] = seek_controllers(d, get_command_stream_ids(ip))
+            curr_cclo["controllers"] = seek_controllers(d, get_command_stream_ids(ip)[0])
             # look for associated network stacks and cmacs
-            curr_cclo["networkstack"] = seek_networkstack(d, get_network_stream_ids(ip))
-            curr_cclo["cmac"] = seek_cmac(d, d[curr_cclo["networkstack"]["name"]])
+            curr_cclo["poe"] = seek_networkstack(d, get_network_stream_ids(ip))
+            if curr_cclo["poe"] is None:
+                curr_cclo["mac"] = None
+            else:
+                curr_cclo["mac"] = seek_mac(d, d[curr_cclo["poe"]["name"]])
 
     return cclo_dict
 
@@ -146,4 +176,4 @@ def scan():
     ol = Overlay(sys.argv[1], download=False)
     s = scan_overlay(ol)
     with open(sys.argv[2],"w") as f:
-        json.dump(s, f)
+        json.dump(s, f, indent=4)
