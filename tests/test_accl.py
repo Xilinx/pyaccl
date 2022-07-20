@@ -71,10 +71,7 @@ def cclo_inst(request):
     for dt in [np.float16, np.float32, np.float64, np.int32, np.int64]:
         allocated_buffers[dt] = []
         for i in range(3):
-            if request.param["hw"]:
-                buf = ACCLBuffer((count,), dtype=dt, target=cclo_ret.cclo.devicemem)
-            else: 
-                buf = ACCLBuffer((count,), dtype=np.float32, zmqsocket=cclo_ret.cclo.socket)
+            buf = cclo_ret.allocate((count,), dtype=dt)
             allocated_buffers[dt].append(buf)
 
     #barrier here to make sure all the devices are configured before testing

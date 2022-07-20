@@ -263,6 +263,11 @@ class accl():
 
         print("Accelerator ready!")
 
+    def allocate(self, shape, dtype=np.float32, physical_address=None, prealloc=True):
+        if self.sim_mode:
+            return ACCLBuffer(shape, dtype=dtype, physical_address=physical_address, prealloc=prealloc, zmqsocket=self.cclo.socket)
+        else:
+            return ACCLBuffer(shape, dtype=dtype, physical_address=physical_address, prealloc=prealloc, target=self.cclo.devicemem)
 
     class dummy_address:
         def __init__(self, adr=0):
