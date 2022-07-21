@@ -174,8 +174,11 @@ class accl():
     """
     ACCL Python Driver
     """
-    def __init__(self, ranks, local_rank, protocol="TCP", nbufs=16, bufsize=1024, xclbin=None, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_sock=None):
-        assert xclbin is not None or sim_sock is not None, "Either simulation socket or FPGA bitstream must be provided"
+    def __init__(self, nranks, local_rank, ranks=None, protocol=None, nbufs=16, bufsize=1024, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_mode=False, xclbin=None, sim_sock=None):
+        if not sim_mode:
+            assert xclbin is not None, "FPGA bitstream must be provided"
+            assert nranks is not None, "Rank descriptor must be provided"
+            assert len(ranks) == nranks, "Ranks descriptor does not match provded number of ranks"
         self.cclo = None
         #define an empty list of RX spare buffers
         self.rx_buffer_spares = []
@@ -205,10 +208,15 @@ class accl():
         self.config_rdy = False
 
         # do initial config of alveo or connect to pipes if in sim mode
-        self.sim_mode = False if sim_sock is None else True
-        self.sim_sock = sim_sock
+        self.sim_mode = sim_mode
+        if sim_sock is not None:
+            self.sim_sock = sim_sock
+        else:
+            print("Simulation socket not explicitly provided, using default")
+            self.sim_sock = "tcp://localhost:"+str(5500+local_rank) 
+
         if self.sim_mode:
-            self.cclo = SimDevice(sim_sock)
+            self.cclo = SimDevice(self.sim_sock)
         else:
             assert (xclbin is not None)
             self.cclo = AlveoDevice(xclbin, board_idx=0, cclo_idx=0)
@@ -217,6 +225,12 @@ class accl():
 
         # check if the CCLO is configured
         assert self.cclo.read(CFGRDY_OFFSET) == 0, "CCLO appears configured, might be in use. Please reset the CCLO and retry"
+
+        # create a dummy ranks descriptor for simulation
+        if self.sim_mode and ranks is None:
+            ranks = []
+            for i in range(nranks):
+                ranks.append({"ip": "127.0.0.1", "port": 9000+i, "session_id": i, "max_segment_size": bufsize})
 
         print("Configuring RX Buffers")
         self.setup_rx_buffers(nbufs, bufsize)
@@ -240,7 +254,14 @@ class accl():
 
         # set stack type
         if not self.sim_mode:
-            assert self.cclo.protocol == self.protocol, "Requested protocol does not match POE"
+            if self.protocol is None:
+                self.protocol = self.cclo.protocol
+            else:
+                assert self.cclo.protocol == self.protocol, "Requested protocol does not match POE"
+        else:
+            if self.protocol is None:
+                print("Simulation transport protocol not explicitly provided, using TCP")
+                self.protocol = "TCP"
 
         if self.protocol == "UDP":
             self.use_udp()

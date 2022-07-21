@@ -16,14 +16,9 @@
 # *******************************************************************************/
 
 import numpy as np
-from pyaccl import accl, ACCLReduceFunctions, ACCLStreamFlags, ACCLBuffer
+from pyaccl import accl, ACCLReduceFunctions, ACCLStreamFlags
 import pytest
-import os
 from mpi4py import MPI
-
-START_PORT = os.getenv("ACCL_SIM_START_PORT")
-if START_PORT is None:
-    START_PORT = 5500
 
 allocated_buffers = {}
 
@@ -52,16 +47,12 @@ def cclo_inst(request):
     #set a random seed to make it reproducible
     np.random.seed(42+local_rank)
 
-    ranks = []
-    for i in range(world_size):
-        ranks.append({"ip": "127.0.0.1", "port": START_PORT+world_size+i, "session_id":i, "max_segment_size": request.param["rxbuf_size"]})
-
     #configure FPGA and CCLO cores with the default 16 RX buffers of size given by request.param["rxbuf_size"]
-    cclo_ret = accl(    ranks,
+    cclo_ret = accl(    world_size,
                         local_rank,
                         bufsize=request.param["rxbuf_size"],
                         protocol=("TCP" if request.param["tcp"] else "UDP"),
-                        sim_sock="tcp://localhost:"+str(START_PORT+local_rank)
+                        sim_mode=True
                     )
     cclo_ret.set_timeout(10**8)
 
