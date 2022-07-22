@@ -66,14 +66,14 @@ def cclo_inst(request):
     else:
         # test if the simulator/emulator ports are taken or not, by trying to bind with them (this should fail)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s_in_use = False
+        s_in_use = 0
         try:
             s.bind(("127.0.0.1", 5500+local_rank))
         except socket.error as e:
             if e.errno == errno.EADDRINUSE:
-                s_in_use = True
-        if not s_in_use:
-            pytest.skip(f"No running simulator/emulator detected at localhost:{5500+local_rank}")
+                s_in_use = 1
+        if comm.allreduce(s_in_use) != world_size:
+            pytest.skip(f"No appropriately-sized simulator/emulator process detected at localhost:{5500+local_rank}")
         s.close()
 
     #configure FPGA and CCLO cores with the default 16 RX buffers of size given by request.param["rxbuf_size"]
