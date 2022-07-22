@@ -19,6 +19,9 @@ import numpy as np
 from pyaccl import accl, ACCLReduceFunctions, ACCLStreamFlags
 import pytest
 from mpi4py import MPI
+import pynq
+from pathlib import Path
+import socket, errno
 
 allocated_buffers = {}
 
@@ -37,7 +40,7 @@ def get_buffers(count, op0_dt, op1_dt, res_dt):
     res_buf[:] = np.random.randn(count).astype(res_dt)
     return op0_buf, op1_buf, res_buf
 
-@pytest.fixture(scope="module", params=[{"rxbuf_size":16*1024, "tcp":True, "hw":False}])
+@pytest.fixture(scope="module", params=[{"rxbuf_size":16*1024, "tcp":True, "hw":False}, {"rxbuf_size":16*1024, "hw":True}])
 def cclo_inst(request):
     # get communicator size and our local rank in it
     comm = MPI.COMM_WORLD
@@ -47,13 +50,51 @@ def cclo_inst(request):
     #set a random seed to make it reproducible
     np.random.seed(42+local_rank)
 
+    if request.param["hw"]:
+        # for hardware testing we use the 3-rank test designs
+        if(world_size > 3):
+            pytest.skip("Hardware tests only supported for up to 3 ranks")
+        try:
+            # use pynq to pull xclbins from link files
+            # only the xclbins corresponding to the current pynq active device will be pulled
+            pynq.utils.download_overlays(".", fail_at_lookup=True, fail_at_device_detection=True)
+            # get full filename and path of axis3x xclbin
+            for path in Path('.').rglob('axis3x*.xclbin'):
+                xclbin = str(path)
+        except:
+            pytest.skip("No bitstreams found for available Alveo device (or no device available)")
+    else:
+        # test if the simulator/emulator ports are taken or not, by trying to bind with them (this should fail)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s_in_use = False
+        try:
+            s.bind(("127.0.0.1", 5500+local_rank))
+        except socket.error as e:
+            if e.errno == errno.EADDRINUSE:
+                s_in_use = True
+        if not s_in_use:
+            pytest.skip(f"No running simulator/emulator detected at localhost:{5500+local_rank}")
+        s.close()
+
     #configure FPGA and CCLO cores with the default 16 RX buffers of size given by request.param["rxbuf_size"]
-    cclo_ret = accl(    world_size,
-                        local_rank,
-                        bufsize=request.param["rxbuf_size"],
-                        protocol=("TCP" if request.param["tcp"] else "UDP"),
-                        sim_mode=True
-                    )
+    try:
+        if request.param["hw"]:
+            cclo_ret = accl(    world_size,
+                                local_rank,
+                                bufsize=request.param["rxbuf_size"],
+                                xclbin=xclbin,
+                                cclo_idx=local_rank
+                            )
+        else:
+            cclo_ret = accl(    world_size,
+                                local_rank,
+                                bufsize=request.param["rxbuf_size"],
+                                protocol=("TCP" if request.param["tcp"] else "UDP"),
+                                sim_mode=True
+                            )
+    except:
+        pytest.skip("Unable to initialize ACCL interface")
+
     cclo_ret.set_timeout(10**8)
 
     #allocate 3 buffers of max size used in our tests (128 elements),
@@ -72,6 +113,7 @@ def cclo_inst(request):
     yield cclo_ret
 
     # teardown
+    comm.barrier()
     cclo_ret.deinit()
 
 @pytest.fixture

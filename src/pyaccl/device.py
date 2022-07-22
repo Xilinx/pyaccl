@@ -96,22 +96,35 @@ class SimDevice():
         assert ack["status"] == 0, "ZMQ call error"
 
 class AlveoDevice():
-    def __init__(self, xclbin, board_idx=0, cclo_idx=0):
-        self.local_alveo = pynq.Device.devices[board_idx]
-        self.ol = pynq.Overlay(xclbin, device=self.local_alveo)
-        accl_dict = scan_overlay(self.ol)
-        self.cclo = self.ol.__getattr__(accl_dict[cclo_idx])
-        self.hostctrl = [self.ol.__getattr__(c) for c in accl_dict[cclo_idx]["controllers"]]
+    def __init__(self, xclbin, board_idx=None, cclo_idx=0):
+
+        if board_idx is not None:
+            self.local_alveo = pynq.Device.devices[board_idx]
+            self.ol = pynq.Overlay(xclbin, device=self.local_alveo)
+        else:
+            self.ol = pynq.Overlay(xclbin)
+        cclo_dict = scan_overlay(self.ol)[cclo_idx]
+        self.cclo = self.ol.__getattr__(cclo_dict["name"])
+        self.hostctrl = [self.ol.__getattr__(c) for c in cclo_dict["controllers"]]
         self.mmio = self.cclo.mmio
-        self.protocol = accl_dict[cclo_idx]["poe"]["protocol"]
-        self.devicemem = self.ol.__getattr__(accl_dict[cclo_idx]["memory"][0])
-        self.rxbufmem = [self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["memory"]]
-        if accl_dict[cclo_idx]["poe"] is None:
+        self.devicemem = self.ol.__getattr__(cclo_dict["memory"][0])
+        self.rxbufmem = [self.ol.__getattr__(b) for b in cclo_dict["memory"]]
+        if cclo_dict["poe"] is not None:
+            # update protocol if a specific POE was discovered
+            self.protocol = cclo_dict["poe"]["protocol"]
+        else:
+            # normally we don't find a POE if we're using straight AXI streams,
+            # either directly if the CCLO is configured for UDP, or via a dummy
+            # TCP stack if the CCLO is configured for TCP.
+            # either way, AXIS protocol will invoke no housekeeping for ports/sessions
+            self.protocol = "AXIS"
+
+        if cclo_dict["poe"] is None:
             self.networkmem = None
         elif self.protocol == "TCP":
             self.networkmem = []
-            self.networkmem.append([self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["poe"]["memory"][0]])
-            self.networkmem.append([self.ol.__getattr__(b) for b in accl_dict[cclo_idx]["poe"]["memory"][1]])
+            self.networkmem.append([self.ol.__getattr__(b) for b in cclo_dict["poe"]["memory"][0]])
+            self.networkmem.append([self.ol.__getattr__(b) for b in cclo_dict["poe"]["memory"][1]])
         else:
             self.networkmem = None
 

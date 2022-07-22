@@ -23,9 +23,7 @@ class ACCLBuffer(np.ndarray):
     next_free_address = 0
     def __new__(cls, shape, dtype=np.float32, target=None, zmqsocket=None, physical_address=None, prealloc=True):
         if zmqsocket is None:
-            self = pynq.allocate(shape, dtype, target=target)
-            self.physical_address = None
-            self.target = target
+            self = pynq.allocate(shape, dtype=dtype, target=target)
         else:
             self = super().__new__(cls, shape, dtype=dtype)
 

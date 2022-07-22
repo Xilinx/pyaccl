@@ -150,15 +150,15 @@ def get_banks_attr(banks):
 def scan_overlay(ol):
     d = ol.ip_dict
     # search IP dictionary for CCLOs by VLNV
-    cclo_dict = {}
+    cclo_list = []
     for key in d.keys():
         ip = d[key]
         if ip['type'] == CCLO_VLNV:
             # extract memory connections
             assert ip["registers"]["m_axi_0"]["memory"] == ip["registers"]["m_axi_1"]["memory"], "CCLO AXIMM ports not connected to same memory"
-            cclo_dict[ip["cu_index"]] = {}
-            curr_cclo = cclo_dict[ip["cu_index"]]
+            curr_cclo = {}
             curr_cclo["name"] = ip['fullpath']
+            curr_cclo["index"] = ip["cu_index"]
             curr_cclo["memory"] = get_banks_attr(ip["registers"]["m_axi_0"]["memory"])
             # look for associated controllers
             curr_cclo["controllers"] = seek_controllers(d, get_command_stream_ids(ip)[0])
@@ -168,8 +168,8 @@ def scan_overlay(ol):
                 curr_cclo["mac"] = None
             else:
                 curr_cclo["mac"] = seek_mac(d, d[curr_cclo["poe"]["name"]])
-
-    return cclo_dict
+            cclo_list.insert(ip["cu_index"], curr_cclo)
+    return cclo_list
 
 def scan():
     # initialize overlay from xclbin file and scan

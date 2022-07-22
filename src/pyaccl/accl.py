@@ -15,7 +15,6 @@
 #
 # *******************************************************************************/
 
-from argparse import ArgumentError
 import numpy as np
 import warnings
 import ipaddress
@@ -174,11 +173,10 @@ class accl():
     """
     ACCL Python Driver
     """
-    def __init__(self, nranks, local_rank, ranks=None, protocol=None, nbufs=16, bufsize=1024, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_mode=False, xclbin=None, sim_sock=None):
+    def __init__(self, nranks, local_rank, ranks=None, protocol=None, nbufs=16, bufsize=1024, arith_config=ACCL_DEFAULT_ARITH_CONFIG, sim_mode=False, xclbin=None, sim_sock=None, board_idx=None, cclo_idx=0):
         if not sim_mode:
-            assert xclbin is not None, "FPGA bitstream must be provided"
-            assert nranks is not None, "Rank descriptor must be provided"
-            assert len(ranks) == nranks, "Ranks descriptor does not match provded number of ranks"
+            if xclbin is None:
+                raise ValueError("FPGA bitstream must be provided")
         self.cclo = None
         #define an empty list of RX spare buffers
         self.rx_buffer_spares = []
@@ -208,18 +206,18 @@ class accl():
         self.config_rdy = False
 
         # do initial config of alveo or connect to pipes if in sim mode
-        self.sim_mode = sim_mode
-        if sim_sock is not None:
-            self.sim_sock = sim_sock
-        else:
-            print("Simulation socket not explicitly provided, using default")
-            self.sim_sock = "tcp://localhost:"+str(5500+local_rank) 
+        self.sim_mode = sim_mode 
 
         if self.sim_mode:
+            if sim_sock is not None:
+                self.sim_sock = sim_sock
+            else:
+                print("Simulation socket not explicitly provided, using default")
+                self.sim_sock = "tcp://localhost:"+str(5500+local_rank)
             self.cclo = SimDevice(self.sim_sock)
         else:
             assert (xclbin is not None)
-            self.cclo = AlveoDevice(xclbin, board_idx=0, cclo_idx=0)
+            self.cclo = AlveoDevice(xclbin, board_idx=board_idx, cclo_idx=cclo_idx)
 
         print("CCLO HWID: {} at {}".format(hex(self.get_hwid()), hex(self.cclo.mmio.base_addr)))
 
@@ -227,7 +225,7 @@ class accl():
         assert self.cclo.read(CFGRDY_OFFSET) == 0, "CCLO appears configured, might be in use. Please reset the CCLO and retry"
 
         # create a dummy ranks descriptor for simulation
-        if self.sim_mode and ranks is None:
+        if ranks is None:
             ranks = []
             for i in range(nranks):
                 ranks.append({"ip": "127.0.0.1", "port": 9000+i, "session_id": i, "max_segment_size": bufsize})
@@ -256,8 +254,8 @@ class accl():
         if not self.sim_mode:
             if self.protocol is None:
                 self.protocol = self.cclo.protocol
-            else:
-                assert self.cclo.protocol == self.protocol, "Requested protocol does not match POE"
+            elif self.cclo.protocol != self.protocol:
+                raise ValueError("Requested protocol does not match detected POE protocol")
         else:
             if self.protocol is None:
                 print("Simulation transport protocol not explicitly provided, using TCP")
@@ -273,9 +271,12 @@ class accl():
                 self.rx_buf_network.sync_to_device()
             self.use_tcp()
         elif self.protocol == "RDMA":
-            raise ArgumentError("RDMA not supported yet")
+            raise ValueError("RDMA not supported yet")
+        elif self.protocol == "AXIS":
+            # no action when moving data over AXI Streams
+            pass
         else:
-            raise ArgumentError("Unrecognized Protocol")
+            raise ValueError("Unrecognized Protocol")
 
         # start connections if using TCP
         if self.protocol == "TCP":
