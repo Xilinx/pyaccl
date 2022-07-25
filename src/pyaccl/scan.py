@@ -148,9 +148,9 @@ def scan_overlay(ol):
             curr_cclo = {}
             curr_cclo["name"] = ip['fullpath']
             curr_cclo["index"] = ip["cu_index"]
-            # get memory bank(s); newer versions of pynq will expose 
-            # a memory bank group (MBG) per register, with a list of connected banks; 
-            # otherwise use the "memory" entry, which has just one connected bank
+            # get memory bank(s); newer versions of pynq will expose for multi-bank connections
+            # a memory bank group (MBG) per register, with lists the connected banks; 
+            # otherwise there is only the "memory" entry, when there is just one connected bank
             if "MBG" in ip["registers"]["m_axi_0"]:
                 curr_cclo["memory"] = get_banks_attr(ip["registers"]["m_axi_0"]["MBG"])
             else:
