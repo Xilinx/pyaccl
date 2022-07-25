@@ -48,7 +48,6 @@ def get_command_stream_ids(ip):
     return ret  
 
 def get_network_stream_ids(ip):
-    ret = []
     # get the IPs streams (if none, return empty)
     try:
         stream_dict = ip["streams"]
@@ -59,12 +58,9 @@ def get_network_stream_ids(ip):
         for key in stream_dict.keys():
             # return the ID of the TX data stream
             if(key == "m_axis_eth_tx_data"):
-                ret.append(stream_dict[key]["stream_id"]) 
-
-    return ret
+                return stream_dict[key]["stream_id"]
 
 def get_cmac_stream_ids(ip):
-    ret = []
     # get the IPs streams (if none, return empty)
     try:
         stream_dict = ip["streams"]
@@ -75,9 +71,7 @@ def get_cmac_stream_ids(ip):
         for key in stream_dict.keys():
             # return the ID of the TX data stream
             if(key == "M_AXIS_nl2eth" or key == "axis_net_tx"):
-                ret.append(stream_dict[key]["stream_id"])
-
-    return ret  
+                return stream_dict[key]["stream_id"]
 
 def seek_controllers(ip_dict, stream_id):
     ret = []
@@ -125,26 +119,21 @@ def seek_mac(ip_dict, stream_id):
                     return ip["fullpath"]
 
 def get_banks_attr(banks):
-    # convert from "TI[x:y]" to ["TOx", "TOx+1",...,"TOy-1", "TOy"]
+    # convert from "TI[x]" to "TOx" in a list of banks
     # TI->TO can be HBM->HBM, DDR->bank, PLRAM->plram
-    b = banks.replace(']',' ').replace('[',' ').replace(':',' ').split()
-    ti = b[0]
-    if ti == "HBM":
-        to = ti
-    elif ti == "DDR":
-        to = "bank"
-    elif ti == "PLRAM":
-        to = "plram"
-    else:
-        raise Exception("Unrecognized memory bank type")
-    start_idx = int(b[1])
-    if len(b) > 2:
-        end_idx = int(b[2])
-    else:
-        end_idx = start_idx+1
     ret = []
-    for i in range(start_idx, end_idx):
-        ret.append(to+str(i))
+    for bank in banks:
+        b = bank.replace(']',' ').replace('[',' ').split()
+        ti = b[0]
+        if ti == "HBM":
+            to = ti
+        elif ti == "DDR":
+            to = "bank"
+        elif ti == "PLRAM":
+            to = "plram"
+        else:
+            raise Exception("Unrecognized memory bank type")
+        ret.append(to+b[1])
     return ret
 
 def scan_overlay(ol):
@@ -159,7 +148,13 @@ def scan_overlay(ol):
             curr_cclo = {}
             curr_cclo["name"] = ip['fullpath']
             curr_cclo["index"] = ip["cu_index"]
-            curr_cclo["memory"] = get_banks_attr(ip["registers"]["m_axi_0"]["memory"])
+            # get memory bank(s); newer versions of pynq will expose 
+            # a memory bank group (MBG) per register, with a list of connected banks; 
+            # otherwise use the "memory" entry, which has just one connected bank
+            if "MBG" in ip["registers"]["m_axi_0"]:
+                curr_cclo["memory"] = get_banks_attr(ip["registers"]["m_axi_0"]["MBG"])
+            else:
+                curr_cclo["memory"] = get_banks_attr([ip["registers"]["m_axi_0"]["memory"]])
             # look for associated controllers
             curr_cclo["controllers"] = seek_controllers(d, get_command_stream_ids(ip)[0])
             # look for associated network stacks and cmacs
@@ -167,7 +162,7 @@ def scan_overlay(ol):
             if curr_cclo["poe"] is None:
                 curr_cclo["mac"] = None
             else:
-                curr_cclo["mac"] = seek_mac(d, d[curr_cclo["poe"]["name"]])
+                curr_cclo["mac"] = seek_mac(d, get_cmac_stream_ids(d[curr_cclo["poe"]["name"]]))
             cclo_list.insert(ip["cu_index"], curr_cclo)
     return cclo_list
 
@@ -175,5 +170,8 @@ def scan():
     # initialize overlay from xclbin file and scan
     ol = Overlay(sys.argv[1], download=False)
     s = scan_overlay(ol)
-    with open(sys.argv[2],"w") as f:
-        json.dump(s, f, indent=4)
+    if len(sys.argv) > 2:
+        with open(sys.argv[2],"w") as f:
+            json.dump(s, f, indent=4)
+    else:
+        print(s)
