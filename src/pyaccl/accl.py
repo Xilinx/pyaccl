@@ -126,6 +126,17 @@ class ACCLArithConfig():
         #address where stored in exchange memory
         self.exchmem_addr = None
 
+    def __str__(self):
+        description = f'Arithmetic Config at address {self.exchmem_addr}\n'
+        description += f'Uncompressed dtype B/element: {self.uncompressed_elem_bytes}\n'
+        description += f'Compressed dtype B/element: {self.compressed_elem_bytes}\n'
+        description += f'Ratio of number of compressed to uncompressed elements: {2**self.elem_ratio_log}\n'
+        description += f'Perform arithmetic on compressed dtype: {"True" if self.arith_is_compressed else "False"}\n'
+        description += f'Compressor ID: {self.compressor_tdest}\n'
+        description += f'Decompressor ID: {self.decompressor_tdest}\n'
+        description += f'Reduction function IDs: {self.arith_tdest}\n'
+        return description
+
     @property
     def addr(self):
         assert self.exchmem_addr is not None
