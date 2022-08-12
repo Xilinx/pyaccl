@@ -50,6 +50,7 @@ class CCLOCfgFunc(IntEnum):
 @unique
 class ACCLReduceFunctions(IntEnum):
     '''CCLO reduction functions'''
+    #: Elementwise sum of vectors
     SUM = 0
 
 @unique
@@ -68,10 +69,13 @@ class ACCLCompressionFlags(IntEnum):
 
 @unique
 class ACCLStreamFlags(IntEnum):
+    '''Stream flags'''
+    #: No streaming. All operands and results are in memory
     NO_STREAM = 0
+    #: The first operand is pulled from stream instead of memory
     OP0_STREAM = 1
+    #: The result is pushed to stream instead of memory
     RES_STREAM = 2
-
 
 @unique
 class ErrorCode(IntEnum):

@@ -57,6 +57,8 @@ class ACCLBuffer(np.ndarray):
     # Devicemem read request  {"type": 2, "addr": <uint>, "len": <uint>}
     # Devicemem read response {"status": OK|ERR, "rdata": <array of uint>}
     def sync_from_device(self):
+        """Copy buffer data in the device to host direction
+        """        
         if self.socket is None:
             super().sync_from_device()
         else:
@@ -68,6 +70,8 @@ class ACCLBuffer(np.ndarray):
     # Devicemem write request  {"type": 3, "addr": <uint>, "wdata": <array of uint>}
     # Devicemem write response {"status": OK|ERR}
     def sync_to_device(self):
+        """Copy buffer data in the host to device direction
+        """  
         if self.socket is None:
             super().sync_to_device()
         else:
@@ -84,6 +88,11 @@ class ACCLBuffer(np.ndarray):
 
     @property
     def device_address(self):
+        """Get physical address in FPGA memory
+
+        Returns:
+            int: Physical address
+        """        
         if self.socket is None:
             return self.device_address
         else:

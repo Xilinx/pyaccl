@@ -114,8 +114,29 @@ class ACCLCommunicator():
         return new_comm
 
 class ACCLArithConfig():
+    """An arithmetic configuration for the ACCL hardware datapath.
+    The datapath includes a variety of hardware functions for compression and reduction.
+    Compression functions convert between compressed and uncompressed representations of data.
+    Reduction functions apply arithmetic-logic functions to two buffers, producing a third.
+    Each class of hardware function is identified by a unique ID.
+
+    Args:
+        uncompressed_elem_bytes (int): Number of bytes in the uncompressed datatype
+
+        compressed_elem_bytes (int): Number of bytes in the uncompressed datatype
+
+        elem_ratio_log (int): Log of number of uncompressed elements required to produce one compressed element
+
+        compressor_tdest (int): Hardware function ID of compressor
+
+        decompressor_tdest (int): Hardware function ID of decompressor
+
+        arith_is_compressed (bool): Indicate whether any arithmetic is to be performed on compressed or uncompressed data.
+
+        arith_tdest (list of int): List of hardware function IDs corresponding to the supported reduction operations
+    """  
     def __init__(self, uncompressed_elem_bytes, compressed_elem_bytes, elem_ratio_log,
-                    compressor_tdest, decompressor_tdest, arith_is_compressed, arith_tdest):
+                    compressor_tdest, decompressor_tdest, arith_is_compressed, arith_tdest):                  
         self.uncompressed_elem_bytes = uncompressed_elem_bytes
         self.compressed_elem_bytes = compressed_elem_bytes
         self.elem_ratio_log = elem_ratio_log
@@ -299,6 +320,20 @@ class accl():
         print("Accelerator ready!")
 
     def allocate(self, shape, dtype=np.float32, physical_address=None, prealloc=True):
+        """Allocates an ACCLBuffer in the device memory associated with this CCLO instance.
+
+        Args:
+            shape (tuple): The shape of the desired buffer.
+
+            dtype (NumPy datatype, optional): Desired data type. Defaults to np.float32.
+            
+            physical_address (int, optional): Physical address override. Defaults to None.
+            
+            prealloc (bool, optional): Populate the device-side memory immediately upon buffer creation. Defaults to True.
+
+        Returns:
+            ACCLBuffer: Handle to the created ACCL buffer.
+        """        
         if self.sim_mode:
             return ACCLBuffer(shape, dtype=dtype, physical_address=physical_address, prealloc=prealloc, zmqsocket=self.cclo.socket)
         else:
@@ -321,6 +356,10 @@ class accl():
             print(hex(EXCHANGE_MEM_OFFSET_ADDRESS + i), memory)
 
     def deinit(self):
+        """De-initializes an ACCL instance, resetting the CCLO kernel and 
+        deallocating all internal buffers, but not buffers created by users
+        with allocate()
+        """        
         print("Removing CCLO object at ",hex(self.cclo.mmio.base_addr))
         self.call_sync(scenario=CCLOp.config, function=CCLOCfgFunc.reset_periph)
 
@@ -343,6 +382,12 @@ class accl():
 
     #split global communicator
     def split_communicator(self, indices):
+        """Creates a new communicator from the global communicator 
+        by filtering it with a list of indices
+
+        Args:
+            indices (list of int): List of rank indices to include in the new communicator
+        """        
         assert len(self.communicators) > 0, "No global communicator defined"
         self.communicators[0].readback()
         communicator = self.communicators[0].split(indices)
@@ -587,17 +632,46 @@ class accl():
         self.call_sync(scenario=CCLOp.config, function=CCLOCfgFunc.set_max_segment_size, count=value)
         self.segment_size = value
 
-    @self_check_return_value
     def nop(self, run_async=False):
-        #calls the accelerator with no work. Useful for measuring call latency
+        """Calls the accelerator with no work. Useful for measuring call latency
+
+        Args:
+            run_async (bool, optional): Whether to execute asynchronously. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """        
         handle = self.call_async(scenario=CCLOp.nop)
         if run_async:
             return handle
         else:
             handle.wait()
 
-    @self_check_return_value
     def send(self, srcbuf, count, dst, tag=TAG_ANY, comm_id=GLOBAL_COMM, from_fpga=False, compress_dtype=None, stream_flags=ACCLStreamFlags.NO_STREAM, run_async=False):
+        """Send data to a remote ACCL instance
+
+        Args:
+            srcbuf (ACCLBuffer): Buffer from which to send data
+
+            count (int): Number of elements to copy
+
+            dst (int): Rank index of destination, in the selected communicator
+
+            tag (int, optional): Optional tag. Defaults to TAG_ANY.
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing srcbuf first, assuming the data is already in FPGA memory. Defaults to False.
+            
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            stream_flags (int, optional): Indicates streaming options. Defaults to ACCLStreamFlags.NO_STREAM.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """        
         if not from_fpga:
             srcbuf.sync_to_device()
         handle = self.call_async(scenario=CCLOp.send, count=count, comm=self.communicators[comm_id].addr, root_src_dst=dst, tag=tag, compress_dtype=compress_dtype, stream_flags=stream_flags, addr_0=srcbuf)
@@ -606,8 +680,29 @@ class accl():
         else:
             handle.wait()
 
-    @self_check_return_value
     def recv(self, dstbuf, count, src, tag=TAG_ANY, comm_id=GLOBAL_COMM, to_fpga=False, compress_dtype=None, run_async=False):
+        """Receive data from a remote ACCL instance
+
+        Args:
+            dstbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            src (int): Rank index of source, in the selected communicator
+
+            tag (int, optional): Optional tag. Defaults to TAG_ANY.
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            to_fpga (bool, optional): Return without syncing dstbuf first, assuming the data is not required in host memory. Defaults to False.
+            
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """   
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         handle = self.call_async(scenario=CCLOp.recv, count=count, comm=self.communicators[comm_id].addr, root_src_dst=src, tag=tag, compress_dtype=compress_dtype, addr_2=dstbuf)
@@ -618,8 +713,25 @@ class accl():
         if not to_fpga:
             dstbuf.sync_from_device()
 
-    @self_check_return_value
     def copy(self, srcbuf, dstbuf, count, from_fpga=False, to_fpga=False, run_async=False):
+        """Copy data between two buffers
+
+        Args:
+            srcbuf (ACCLBuffer): Buffer from which to send data
+
+            dstbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            from_fpga (bool, optional): Send without syncing srcbuf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing dstbuf first, assuming the data is not required in host memory. Defaults to False.
+                
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """   
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         # performs dstbuf = srcbuf
@@ -633,8 +745,27 @@ class accl():
         if not to_fpga:
             dstbuf.sync_from_device()
 
-    @self_check_return_value
     def combine(self, count, func, val1, val2, result, val1_from_fpga=False, val2_from_fpga=False, to_fpga=False, run_async=False):
+        """Combine data from two buffers and put result in a third buffer
+
+        Args:
+            count (int): Number of elements to copy
+
+            func (int): Index of function to be applied from ACCLReduceFunctions
+
+            val1, val2 (ACCLBuffers): Operand buffers
+
+            result (ACCLBuffer): Result buffer
+
+            val1_from_fpga, val2_from_fpga (bool, optional): Combine without syncing operand buffers first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing result first, assuming the data is not required in host memory. Defaults to False.
+                
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """ 
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         # TODO: check datatype support
@@ -651,8 +782,29 @@ class accl():
         if not to_fpga:
             result.sync_from_device()
 
-    @self_check_return_value
     def bcast(self, buf, count, root, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Broadcast data to all ACCL instances in a communicator
+
+        Args:
+            buf (ACCLBuffer): Buffer from which to send data, or into which to receive.
+
+            count (int): Number of elements to copy
+
+            root (int): Index of the root, i.e. the ACCL instance which sends from buf. All others receive into buf.
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing buf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing buf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         comm = self.communicators[comm_id]
         is_root = (comm.local_rank == root)
         if not to_fpga and not(is_root) and run_async:
@@ -673,8 +825,31 @@ class accl():
         if not to_fpga and not is_root:
             buf.sync_from_device()
 
-    @self_check_return_value
     def scatter(self, sbuf, rbuf, count, root, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Scatter data to all ACCL instances in a communicator
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            root (int): Index of the root, i.e. the ACCL instance which sends from sbuf. All others receive into rbuf.
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing buf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing buf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -696,8 +871,31 @@ class accl():
         if not to_fpga:
             rbuf[0:count].sync_from_device()
 
-    @self_check_return_value
     def gather(self, sbuf, rbuf, count, root, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Gathers data from all ACCL instances in a communicator
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            root (int): Index of the root, i.e. the ACCL instance which receives into rbuf. All others send from sbuf.
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing buf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing buf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -723,8 +921,29 @@ class accl():
         if not to_fpga and local_rank == root:
             rbuf[:count*p].sync_from_device()
 
-    @self_check_return_value
     def allgather(self, sbuf, rbuf, count, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Fused gather-bcast
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing sbuf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing rbuf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -750,8 +969,33 @@ class accl():
 
     #TODO: figure out if we need to mess with the datatypes
     # https://stackoverflow.com/questions/49135350/how-to-create-a-uint16-numpy-array-from-a-uint8-raw-image-data-array
-    @self_check_return_value
     def reduce(self, sbuf, rbuf, count, root, func, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Combine data from multiple ACCL instances, using a reduction function
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            root (int): Index of the root, i.e. the ACCL instance which writes to rbuf. All others send from sbuf.
+
+            func (int): Index of function to be applied from ACCLReduceFunctions
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing sbuf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing rbuf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -774,8 +1018,31 @@ class accl():
         if not to_fpga and local_rank == root:
             rbuf[0:count].sync_from_device()
 
-    @self_check_return_value
     def allreduce(self, sbuf, rbuf, count, func, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Fused reduce-bcast
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+
+            func (int): Index of function to be applied from ACCLReduceFunctions
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing sbuf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing rbuf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -793,8 +1060,31 @@ class accl():
         if not to_fpga:
             rbuf[0:count].sync_from_device()
 
-    @self_check_return_value
     def reduce_scatter(self, sbuf, rbuf, count, func, comm_id=GLOBAL_COMM, from_fpga=False, to_fpga=False, compress_dtype=None, run_async=False):
+        """Fused reduce-scatter
+
+        Args:
+            sbuf (ACCLBuffer): Buffer from which to send data
+
+            rbuf (ACCLBuffer): Buffer into which to receive data
+
+            count (int): Number of elements to copy
+            
+            func (int): Index of function to be applied from ACCLReduceFunctions
+
+            comm_id (int, optional): Index in the internal communicator list. Defaults to 0 which is the global communicator.
+           
+            from_fpga (bool, optional): Send without syncing sbuf first, assuming the data is already in FPGA memory. Defaults to False.
+
+            to_fpga (bool, optional): Return without syncing rbuf first, assuming the data is not required in host memory. Defaults to False.
+                         
+            compress_dtype (NumPy datatype, optional): A NumPy datatype to which the CCLO will compress the data before seding on the wire. Defaults to None.
+            
+            run_async (bool, optional): Return handle to call instead of waiting for completion. Defaults to False.
+
+        Returns:
+            handle to Pynq call: When run_async is True, returns a handle to a pynq call, which can be waited on. Otherwise, returns None.
+        """
         if not to_fpga and run_async:
             warnings.warn("ACCL: async run returns data on FPGA, user must sync_from_device() after waiting")
         if count == 0:
@@ -817,7 +1107,6 @@ class accl():
         if not to_fpga:
             rbuf[0:count].sync_from_device()
 
-    @self_check_return_value
     def barrier(self, comm_id=GLOBAL_COMM):
         prevcall = [self.call_async(scenario=CCLOp.barrier, comm=self.communicators[comm_id].addr, addr_0=self.utility_spare)]
         prevcall[0].wait()
