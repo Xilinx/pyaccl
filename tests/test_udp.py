@@ -24,16 +24,19 @@ import pynq
 import argparse
 import itertools
 from mpi4py import MPI
+import sys
 
 def configure_vnx_ip(overlay, our_ip):
-    print("Link interface 1 {}".format(ol.cmac_0.linkStatus()))
-    print(ol.networklayer_0.updateIPAddress(our_ip, debug=True))
+    print("Link interface 1 {}".format(ol.cmac_0.link_status()))
+    if ol.cmac_0.link_status()['cmac_link'] == False:
+        sys.exit(1)
+    print(ol.networklayer_0.set_ip_address(our_ip, debug=True))
 
 def configure_vnx_socket(overlay, their_rank, our_port, their_ip, their_port):
     # populate socket table with tuples of remote ip, remote port, local port
     # up to 16 entries possible in VNx
     ol.networklayer_0.sockets[their_rank] = (their_ip, their_port, our_port, True)
-    print(ol.networklayer_0.populateSocketTable(debug=True))
+    print(ol.networklayer_0.populate_socket_table(debug=True))
 
 def configure_vnx(overlay, localrank, ranks):
     assert len(ranks) <= 16, "Too many ranks. VNX supports up to 16 sockets"
@@ -48,9 +51,9 @@ def configure_vnx(overlay, localrank, ranks):
         else:
             configure_vnx_socket(overlay, i, ranks[localrank]["port"], ranks[i]["ip"], ranks[i]["port"])
     time.sleep(2)
-    overlay.networklayer_0.arpDiscovery()
+    overlay.networklayer_0.arp_discovery()
     time.sleep(2)
-    overlay.networklayer_0.arpDiscovery()
+    overlay.networklayer_0.arp_discovery()
 
 def get_buffers(count, op0_dt, op1_dt, res_dt, accl_inst):
     op0_buf = pynq.allocate((count,), dtype=op0_dt, target=accl_inst.cclo.devicemem)
@@ -307,9 +310,10 @@ if __name__ == "__main__":
 
     print(f"Rank ID {local_rank} of {world_size} ranks")
     print(ranks)
-
+    
+    device_id = 0
     #configure FPGA and CCLO cores with the default 16 RX buffers of size given by args.rxbuf_size
-    local_alveo = pynq.Device.devices[0]
+    local_alveo = pynq.Device.devices[device_id]
     print(f"AlveoDevice connecting to plaform {local_alveo.name}, loading xclbin {args.xclbin}")
     #this will program the FPGA if not already; when running under MPI, program the board ahead of time
     #with xbutil to avoid race conditions on the XCLBIN writes
@@ -321,20 +325,16 @@ if __name__ == "__main__":
     print("VNX ready")
     comm.barrier()
 
-    #get handles to ACCL cores
-    cclo_ip = ol.__getattr__(f"ccl_offload_0")
-    hostctrl_ip = ol.__getattr__(f"hostctrl_0")
     #create a memory config corresponding to each CCLO
     #CCLO is connected to HBM banks [0:5]
     # for simplicity we use the first bank for everything
-    cclo_inst = accl(   ranks,
+    cclo_inst = accl(   len(ranks),
                         local_rank,
+                        ranks=ranks,
                         bufsize=args.rxbuf_size,
                         protocol="UDP",
-                        overlay=ol,
-                        cclo_ip=cclo_ip,
-                        hostctrl_ip=hostctrl_ip,
-                        mem = [ol.HBM0, ol.HBM0, ol.HBM0]
+                        board_idx=device_id,
+                        xclbin=args.xclbin
                     )
     cclo_inst.set_timeout(10**8)
     #wait a bit to make sure all the devices are configured before testing
